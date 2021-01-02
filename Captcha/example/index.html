@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captcha Example</title>
+    <style>
+        img,
+        input,
+        button,
+        p {
+            display: block;
+            margin: 0px auto;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <img id="Captcha">
+    <br>
+    <input id="Keys" style="text-transform:uppercase">
+    <br>
+    <button onclick="check(document.getElementById('Keys').value)">Check</button>
+    <button onclick="refresh()">Refresh</button>
+    <p id="Result"></p>
+    <script src="ImageGenerator.js"></script>
+    <script>
+        function get(L) {
+            return new Promise(function (res) {
+                var xhttp = new XMLHttpRequest();
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4 && this.status == 200) {
+                        res(this.responseText);
+                    }
+                };
+                xhttp.open("GET", L, true);
+                xhttp.send();
+            });
+        }
+
+        function post(L, D) {
+            return new Promise(function (res) {
+                var xhttp = new XMLHttpRequest();
+                xhttp.onreadystatechange = function () {
+                    if (this.readyState == 4 && this.status == 200) {
+                        res(this.responseText);
+                    }
+                };
+                xhttp.open("POST", L, true);
+                xhttp.setRequestHeader("Content-Type", "application/json");
+                xhttp.send(JSON.stringify(D));
+            });
+        }
+
+        var C;
+
+        function check(inputText) {
+            C.symbols = inputText.toUpperCase();
+            C.lines = undefined;
+            post('./check', C).then(r => document.getElementById("Result").innerText = JSON.parse(r).result);
+        }
+
+        function refresh() {
+            document.getElementById('Keys').value = '';
+            document.getElementById("Result").innerText = '';
+            get('./refresh').then(r => {
+                C = JSON.parse(r);
+                document.getElementById('Captcha').src = CaptchaImageGenerator.create(C, 100);
+            });
+        }
+
+        refresh();
+    </script>
+</body>
+
+</html>

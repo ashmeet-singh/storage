@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pong AI</title>
+</head>
+<style>
+    body {
+        font-family: Arial, Helvetica, sans-serif;
+        background-color: #272727;
+    }
+
+    #GameCanvas {
+        display: block;
+        margin: 0px auto;
+        background-color: #272727;
+        border: 1px solid #ffffff;
+    }
+
+    .note {
+        padding: 10px;
+        text-align: center;
+        margin: 0px auto;
+        color: #ffffff;
+        font-size: 25px;
+    }
+
+    #Note1 {
+        display: none;
+    }
+</style>
+
+<body>
+
+    <canvas id="GameCanvas"></canvas>
+    <p id="Note1" class="note">-</p>
+    <p id="Note2" class="note">-</p>
+
+    <script>
+        function S(id) { return document.getElementById(id); }
+
+        function getRandomNumber(min, max, decimal) {
+            if (decimal === undefined) { decimal = 1; };
+            min *= decimal;
+            max *= decimal;
+            return ((Math.floor(Math.random() * (max - min + 1)) + min) / decimal);
+        };
+
+
+
+        var Vector = {};
+
+        Vector.create = function (x, y) {
+            return { x: x || 0, y: y || 0 };
+        };
+
+        Vector.add = function (vectorA, vectorB, output) {
+            if (!output) { output = {}; };
+            output.x = vectorA.x + vectorB.x;
+            output.y = vectorA.y + vectorB.y;
+            return output;
+        };
+
+        Vector.rotate = function (vector, angle, output) {
+            var cos = Math.cos(angle), sin = Math.sin(angle);
+            if (!output) { output = {}; };
+            var x = vector.x * cos - vector.y * sin;
+            output.y = vector.x * sin + vector.y * cos;
+            output.x = x;
+            return output;
+        };
+
+        Vector.mult = function (vector, scalar) {
+            return { x: vector.x * scalar, y: vector.y * scalar };
+        };
+
+
+
+
+        var neuralNetwork = (function () {
+
+            var THIS = {
+                getLayerOutput: function (input, weights, biases) {
+                    var output = [],
+                        i1, i2,
+                        l1 = weights.length,
+                        l2 = input.length;
+
+                    for (i1 = 0; i1 < l1; i1++) {
+                        output[i1] = biases[i1];
+                        for (i2 = 0; i2 < l2; i2++) {
+                            output[i1] += input[i2] * weights[i1][i2];
+                        };
+                        if (output[i1] < 0) { output[i1] = 0; };
+                    };
+
+                    return output;
+                },
+
+                getLayersOutput: function (input, layers) {
+                    var i, l = layers.length, output;
+
+                    output = THIS.getLayerOutput(input, layers[0].weights, layers[0].biases);
+                    for (i = 1; i < l; i++) {
+                        output = THIS.getLayerOutput(output, layers[i].weights, layers[i].biases);
+                    };
+
+                    return output;
+                },
+
+                randomNumberDecimal: 1000,
+
+                getRandomNumber: function (min, max, decimal) {
+                    if (decimal === undefined) { decimal = THIS.randomNumberDecimal; };
+                    min *= decimal;
+                    max *= decimal;
+                    return ((Math.floor(Math.random() * (max - min + 1)) + min) / decimal);
+                },
+
+                getRandomNumbersArray: function (min, max, length) {
+                    var newArray = [], i;
+
+                    for (i = 0; i < length; i++) {
+                        newArray[i] = THIS.getRandomNumber(min, max);
+                    };
+
+                    return newArray;
+                },
+
+                createLayer: function (inputs, outputs, weightsMin, weightsMax, biasesMin, biasesMax) {
+                    var newLayer = {}, i;
+
+                    newLayer.biases = THIS.getRandomNumbersArray(biasesMin, biasesMax, outputs);
+
+                    newLayer.weights = [];
+                    for (i = 0; i < outputs; i++) {
+                        newLayer.weights[i] = THIS.getRandomNumbersArray(weightsMin, weightsMax, inputs);
+                    };
+
+                    return newLayer;
+                },
+
+                create: function (layersDesign, weightsMin, weightsMax, biasesMin, biasesMax) {
+                    var i, newNetwork = [];
+
+                    for (i = 0; i < layersDesign.length - 1; i++) {
+                        newNetwork[i] = THIS.createLayer(layersDesign[i], layersDesign[i + 1], weightsMin, weightsMax, biasesMin, biasesMax);
+                    };
+
+                    return newNetwork;
+                },
+
+                getOutput: function (input, network) {
+                    return THIS.getLayersOutput(input, network);
+                },
+
+                changeRandomly: function (network, weightsMin, weightsMax, biasesMin, biasesMax) {
+                    network = JSON.parse(JSON.stringify(network));
+                    var i1, i2, i3, l1, l2, l3;
+                    l1 = network.length;
+                    for (i1 = 0; i1 < l1; i1++) {
+                        l2 = network[i1].weights.length;
+                        for (i2 = 0; i2 < l2; i2++) {
+                            l3 = network[i1].weights[i2].length;
+                            for (i3 = 0; i3 < l3; i3++) {
+                                network[i1].weights[i2][i3] += THIS.getRandomNumber(weightsMin, weightsMax);
+                            };
+                        };
+
+                        l2 = network[i1].biases.length;
+                        for (i2 = 0; i2 < l2; i2++) {
+                            network[i1].biases[i2] += THIS.getRandomNumber(biasesMin, biasesMax);
+                        };
+                    };
+                    return network;
+                }
+            };
+
+            return THIS;
+        })();
+
+
+
+
+        var match = (function () {
+            var THIS = {
+                create: function () {
+                    var newMatch = {
+                        width: 600,
+                        height: 400,
+                        score: {
+                            leftPlayer: 0,
+                            rightPlayer: 0
+                        },
+                        maxScore: 10,
+                        player: {
+                            width: 25,
+                            height: 100,
+                            maxSpeed: null,
+                            margin: 5
+                        },
+                        ball: {
+                            radius: 10,
+                            maxSpeed: 400
+                        },
+                        position: {
+                            leftPlayer: Vector.create(),
+                            rightPlayer: Vector.create(),
+                            ball: Vector.create(),
+                        },
+                        velocity: {
+                            leftPlayer: Vector.create(),
+                            rightPlayer: Vector.create(),
+                            ball: Vector.create(),
+                        },
+                        totalHits: 0,
+                        isOver: false
+                    };
+
+                    newMatch.player.maxSpeed = (newMatch.ball.maxSpeed * (newMatch.height - newMatch.player.height - (2 * newMatch.player.margin))) / (newMatch.width - (2 * newMatch.player.width) - (2 * newMatch.player.margin) - (2 * newMatch.ball.radius));
+
+                    return newMatch;
+                },
+                startRound: function (match) {
+                    match.position.leftPlayer.x = match.player.width / 2 + match.player.margin;
+                    match.position.leftPlayer.y = match.height / 2;
+
+                    match.position.rightPlayer.x = match.width - match.player.width / 2 - match.player.margin;
+                    match.position.rightPlayer.y = match.height / 2;
+
+                    match.position.ball.x = match.width / 2;
+                    match.position.ball.y = match.height / 2;
+
+                    match.velocity.ball.x = match.ball.maxSpeed;
+
+                    Vector.rotate(match.velocity.ball, getRandomNumber(0, 6.28, 100), match.velocity.ball);
+                    while (Math.abs(match.velocity.ball.x) < Math.abs(match.velocity.ball.y)) {
+                        Vector.rotate(match.velocity.ball, getRandomNumber(0, 6.28, 100), match.velocity.ball);
+                    };
+
+                    return match;
+                },
+                moveLeftPlayerDown: function (match) { match.velocity.leftPlayer.y = match.player.maxSpeed; },
+                moveLeftPlayerUp: function (match) { match.velocity.leftPlayer.y = -match.player.maxSpeed; },
+                stopLeftPlayer: function (match) { match.velocity.leftPlayer.y = 0; },
+                moveRightPlayerDown: function (match) { match.velocity.rightPlayer.y = match.player.maxSpeed; },
+                moveRightPlayerUp: function (match) { match.velocity.rightPlayer.y = -match.player.maxSpeed; },
+                stopRightPlayer: function (match) { match.velocity.rightPlayer.y = 0; },
+                update: function (match, deltaTime, onRoundOver, onMatchOver) {
+                    var pos = match.position, vel = match.velocity,
+                        b = match.ball, p = match.player;
+
+                    Vector.add(pos.leftPlayer, Vector.mult(vel.leftPlayer, deltaTime), pos.leftPlayer);
+                    Vector.add(pos.rightPlayer, Vector.mult(vel.rightPlayer, deltaTime), pos.rightPlayer);
+                    Vector.add(pos.ball, Vector.mult(vel.ball, deltaTime), pos.ball);
+
+                    /* Bounce ball */
+                    if (pos.ball.y - b.radius < 0) {
+                        vel.ball.y = -vel.ball.y;
+                        pos.ball.y = b.radius;
+                    }
+                    else if (pos.ball.y + b.radius > match.height) {
+                        vel.ball.y = -vel.ball.y;
+                        pos.ball.y = match.height - b.radius;
+                    };
+
+                    if (0 > pos.leftPlayer.y - (p.height / 2) - p.margin) { pos.leftPlayer.y = (p.height / 2) + p.margin; }
+                    else if (match.height < pos.leftPlayer.y + (p.height / 2) + p.margin) { pos.leftPlayer.y = match.height - (p.height / 2) - p.margin; };
+
+                    if (0 > pos.rightPlayer.y - (p.height / 2) - p.margin) { pos.rightPlayer.y = (p.height / 2) + p.margin; }
+                    else if (match.height < pos.rightPlayer.y + (p.height / 2) + p.margin) { pos.rightPlayer.y = match.height - (p.height / 2) - p.margin; };
+
+                    if (pos.ball.x - b.radius < p.width + p.margin && pos.ball.x + (b.radius / 5) > p.width + p.margin) {
+                        if (pos.ball.y > pos.leftPlayer.y + (p.height / 2) + b.radius || pos.ball.y < pos.leftPlayer.y - (p.height / 2) - b.radius) {
+                            match.score.rightPlayer++;
+                            if (match.score.rightPlayer === match.maxScore) {
+                                match.isOver = true;
+                                if (onMatchOver) { onMatchOver('right player wins'); };
+                            } else {
+                                if (onRoundOver) { onRoundOver(); };
+                            };
+                        } else {
+                            Vector.rotate(match.velocity.ball, getRandomNumber(0, 6.28, 100), match.velocity.ball);
+                            while (Math.abs(match.velocity.ball.x) < Math.abs(match.velocity.ball.y)) {
+                                Vector.rotate(match.velocity.ball, getRandomNumber(0, 6.28, 100), match.velocity.ball);
+                            };
+                            if (vel.ball.x < 0) {
+                                vel.ball.x = -vel.ball.x;
+                            };
+                            pos.ball.x = b.radius + p.margin + p.width;
+                            match.totalHits++;
+                        };
+                    } else if (pos.ball.x + b.radius > match.width - (p.width + p.margin) && pos.ball.x - (b.radius / 5) < match.width - (p.width + p.margin)) {
+                        if (pos.ball.y > pos.rightPlayer.y + (p.height / 2) + b.radius || pos.ball.y < pos.rightPlayer.y - (p.height / 2) - b.radius) {
+                            match.score.leftPlayer++;
+                            if (match.score.leftPlayer === match.maxScore) {
+                                match.isOver = true;
+                                if (onMatchOver) { onMatchOver('left player wins'); };
+                            } else {
+                                if (onRoundOver) { onRoundOver(); };
+                            };
+                        } else {
+                            Vector.rotate(match.velocity.ball, getRandomNumber(0, 6.28, 100), match.velocity.ball);
+                            while (Math.abs(match.velocity.ball.x) < Math.abs(match.velocity.ball.y)) {
+                                Vector.rotate(match.velocity.ball, getRandomNumber(0, 6.28, 100), match.velocity.ball);
+                            };
+                            if (vel.ball.x > 0) {
+                                vel.ball.x = -vel.ball.x;
+                            };
+                            pos.ball.x = match.width - b.radius - p.margin - p.width;
+                            match.totalHits++;
+                        };
+                    };
+                }
+            };
+
+            return THIS;
+        })();
+
+
+
+
+        var canvas = (function () {
+            var THIS = {
+                cvs: S('GameCanvas'),
+                ctx: S('GameCanvas').getContext('2d'),
+                setDimensions: function (width, height) {
+                    THIS.cvs.width = width;
+                    THIS.cvs.height = height;
+                    THIS.cvs.style.width = width + 'px';
+                    THIS.cvs.style.height = height + 'px';
+                },
+                fillRect: function (x, y, w, h) {
+                    THIS.ctx.fillRect(x, y, w, h);
+                },
+                arc: function (x, y, r, s, e) {
+                    if (s === undefined || e === undefined) { s = 0; e = Math.PI * 2; };
+                    THIS.ctx.arc(x, y, r, s, e);
+                },
+                fillArc: function (x, y, r, s, e) {
+                    THIS.ctx.beginPath();
+                    THIS.arc(x, y, r, s, e);
+                    THIS.ctx.fill();
+                },
+                strokeArc: function (x, y, r, s, e) {
+                    THIS.ctx.beginPath();
+                    THIS.arc(x, y, r, s, e);
+                    THIS.ctx.stroke();
+                },
+                clear: function () {
+                    THIS.ctx.clearRect(0, 0, THIS.cvs.width, THIS.cvs.height);
+                },
+                fillStyle: function (style) {
+                    THIS.ctx.fillStyle = style;
+                },
+                strokeStyle: function (style) {
+                    THIS.ctx.strokeStyle = style;
+                },
+                scale: function (x, y) {
+                    THIS.ctx.scale(x, y);
+                }
+            };
+
+            return THIS;
+        })();
+
+
+
+
+        var UI = (function () {
+            var THIS = {
+                elem: {
+                    note1: S('Note1'),
+                    note2: S('Note2')
+                },
+                setNote1: function (text) { THIS.elem.note1.innerText = text; },
+                setNote2: function (text) { THIS.elem.note2.innerText = text; }
+            };
+
+            return THIS;
+        })();
+
+
+
+
+        var engine = (function () {
+            var THIS = {
+                time: {
+                    current: 0,
+                    previous: 0,
+                    elapsed: 0,
+                    lag: 0,
+                    ms_per_update: 8,
+                },
+                matches: {
+                    foreground: {
+                        match: null,
+                    },
+                    background: {
+                        testMatches: [],
+                        bestAI: null,
+                        totalTestMatches: 100,
+                        generation: 0
+                    }
+                },
+                layersDesign: [5, 7, 2],
+                drawMatch: function (match) {
+                    canvas.clear();
+
+                    canvas.fillStyle('#ffff00');
+                    canvas.fillArc(match.position.ball.x, match.position.ball.y, match.ball.radius, 0, Math.PI * 2);
+
+                    canvas.fillStyle('#ffffff');
+                    canvas.fillRect(match.position.leftPlayer.x - (match.player.width / 2), match.position.leftPlayer.y - (match.player.height / 2), match.player.width, match.player.height);
+                    canvas.fillRect(match.position.rightPlayer.x - (match.player.width / 2), match.position.rightPlayer.y - (match.player.height / 2), match.player.width, match.player.height);
+                },
+                movePlayersWithAI: function (inputMatch, AI) {
+                    if (getRandomNumber(1, 4) !== 1) { return; }
+                    var pos = inputMatch.position,
+                        vel = inputMatch.velocity;
+                    var output;
+
+                    output = neuralNetwork.getOutput([pos.leftPlayer.y, pos.ball.x, pos.ball.y, vel.ball.x, vel.ball.y], AI);
+                    if (output[0] > output[1]) {
+                        match.moveLeftPlayerUp(inputMatch);
+                    } else if (output[0] < output[1]) {
+                        match.moveLeftPlayerDown(inputMatch);
+                    } else {
+                        match.stopLeftPlayer(inputMatch);
+                    };
+
+                    output = neuralNetwork.getOutput([pos.rightPlayer.y, inputMatch.width - pos.ball.x, pos.ball.y, -vel.ball.x, vel.ball.y], AI);
+                    if (output[0] > output[1]) {
+                        match.moveRightPlayerUp(inputMatch);
+                    } else if (output[0] < output[1]) {
+                        match.moveRightPlayerDown(inputMatch);
+                    } else {
+                        match.stopRightPlayer(inputMatch);
+                    };
+                },
+                updateTestMatches: function (testMatches, ms_per_update, onTestMatchesOver) {
+                    var i, l = testMatches.length, isTestMatchesOver = true, maxHits = 0, bestMatch;
+                    for (i = 0; i < l; i++) {
+                        if (testMatches[i].match.isOver) {
+                            if (maxHits < testMatches[i].match.totalHits) {
+                                maxHits = testMatches[i].match.totalHits;
+                                bestMatch = i
+                            };
+                        } else {
+                            THIS.movePlayersWithAI(testMatches[i].match, testMatches[i].testAI);
+                            match.update(testMatches[i].match, ms_per_update / 1000,
+                                function () {
+                                    match.startRound(testMatches[i].match);
+                                },
+                                function () { }
+                            );
+                            isTestMatchesOver = false;
+                            break;
+                        };
+                    };
+
+                    if (isTestMatchesOver) { onTestMatchesOver(testMatches[bestMatch].testAI); }
+                },
+                createTestMatches: function (bestAI, length) {
+                    var testMatches = [], i;
+                    for (i = 0; i < length; i++) {
+                        testMatches[i] = {};
+                        testMatches[i].match = match.startRound(match.create());
+                        testMatches[i].testAI = neuralNetwork.changeRandomly(bestAI, -1, 1, -1, 1);
+                    };
+                    return testMatches
+                },
+                gameLoop: function () {
+                    THIS.time.current = Date.now();
+                    THIS.time.elapsed = THIS.time.current - THIS.time.previous;
+                    THIS.time.previous = THIS.time.current;
+                    THIS.time.lag += THIS.time.elapsed;
+
+                    /* Game input */
+
+                    while (THIS.time.lag >= THIS.time.ms_per_update) {
+                        THIS.time.lag -= THIS.time.ms_per_update;
+
+                        /* Game update */
+                        THIS.movePlayersWithAI(THIS.matches.foreground.match, THIS.matches.background.bestAI);
+                        match.update(THIS.matches.foreground.match, THIS.time.ms_per_update / 1000,
+                            function () {
+                                match.startRound(THIS.matches.foreground.match);
+                            },
+                            function () {
+                                THIS.matches.foreground.match = match.startRound(match.create());
+                            }
+                        );
+
+                        var i;
+                        for (i = 0; i < 500; i++) {
+                            THIS.updateTestMatches(THIS.matches.background.testMatches, THIS.time.ms_per_update, function (newBestAI) {
+                                THIS.matches.background.testMatches = THIS.createTestMatches(newBestAI, THIS.matches.background.totalTestMatches);
+                                THIS.matches.background.bestAI = newBestAI;
+                                THIS.matches.background.generation++;
+                                UI.setNote2('Generation : ' + THIS.matches.background.generation);
+                            });
+                        };
+
+                    };
+
+                    /* Game render */
+                    THIS.drawMatch(THIS.matches.foreground.match);
+
+                    window.requestAnimationFrame(THIS.gameLoop);
+                },
+                runGameLoop: function () {
+                    THIS.matches.foreground.match = match.startRound(match.create());
+                    THIS.matches.background.bestAI = neuralNetwork.create(THIS.layersDesign, 0, 0, 0, 0);
+                    THIS.matches.background.testMatches = THIS.createTestMatches(THIS.matches.background.bestAI, THIS.matches.background.totalTestMatches);
+                    canvas.setDimensions(THIS.matches.foreground.match.width, THIS.matches.foreground.match.height);
+                    THIS.time.previous = Date.now();
+                    UI.setNote2('Generation : ' + THIS.matches.background.generation);
+                    THIS.gameLoop();
+                }
+            };
+
+            return THIS;
+        })();
+
+        engine.runGameLoop();
+    </script>
+</body>
+
+</html>
