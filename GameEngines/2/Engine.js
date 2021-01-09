@@ -3,7 +3,6 @@ var Engine = {};
 (function () {
 
     Engine.create = function () {
-
         var engine = {
             frameRequestId: undefined,
             time: undefined,
